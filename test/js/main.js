@@ -1,9 +1,11 @@
-﻿var canvasArea = {
+﻿
+var canvasArea = {
 
     width: 600,
     height: 600,
     canvas: document.createElement("canvas"),
     interval: 20,
+    context: null,
 
     Initiate: function () {
         this.canvas.width = this.width;
@@ -19,21 +21,29 @@
     }
 };
 
+var events;
+var ui;
+
+// ################################################################################################################
+
 // game
 var gameManager = {
 
-    state: 0,
+    state: 10,
     level: 0,
     winTimer: -1,
     winDuration: 60,
-    button: null,
-    levelProperties: [[80, 160, 280], [40, 80, 280]],
+    resetButton: null,
+    tryAgainButton: null,
+    levelProperties: [[80, 160, 280], [50, 160, 200], [80, 120, 200], [80, 160, 280]],
     pauseInput: false,
+    eventList: [],
 
     Initiate: function () {
-        this.button = document.getElementById("button");
+        this.resetButton = document.getElementById("resetButton");
+        this.tryAgainButton = document.getElementById("tryAgainButton");
     },
-    
+
     DrawGrid: function () {
         grid.Clear();
         grid.Draw();
@@ -86,18 +96,35 @@ var gameManager = {
             return false;
         }
     },
-
-    FullReset: function () {
+    
+    OnButtonPressReset: function () {
         this.state = -2;
-        this.level = 0;
+        this.level = 1;
     },
-    UpdateButtonPress: function () {
-        this.FullReset();
+    OnButtonPressTryAgain: function () {
+        this.state = -2;
     },
 
+    UpdateEvents: function () {
+        for (let i = 0; i < this.eventList.length; i++) {
+            this.eventList[i].Update();
+        }
+    },
     UpdateGame: function () {
+        /*
+         * notes :
+         * etat de freeze
+         * etat de win
+         * etat de transition entre niveau
+         * etat de lose
+         * etat de reset
+         * etat normal
+        */
+
+        // normal
         if (this.state === 0)
             this.UpdateGrid();
+        // win freeze
         else if (this.state === 1) {
             this.state++;
             this.winTimer = this.winDuration;
@@ -107,22 +134,25 @@ var gameManager = {
                 this.winTimer--;
             else {
                 this.state++;
-                console.log("The End Won");
-                this.level = (this.level + 1) % this.levelProperties.length;
+                this.level = this.level + 1 === this.levelProperties.length ? 1 : this.level + 1;
             }
         }
+        // reduce grid
         else if (this.state === 3) {
             this.state = this.ReduceGrid() ? this.state + 1 : this.state;
             this.DrawGrid();
         }
+        // reposition elements
         else if (this.state === 4) {
             this.state = this.Reposition() ? this.state + 1 : this.state;
             this.DrawGrid();
         }
+        // go to next level
         else if (this.state === 5) {
             this.ResetForNextLevel();
             this.state = 0;
         }
+        // reset / restart
         else if (this.state === -2) {
             this.state = this.Reposition() ? this.state - 1 : this.state;
             this.DrawGrid();
@@ -131,40 +161,73 @@ var gameManager = {
             this.ResetForNextLevel();
             this.state = 0;
         }
+        // lose possibility
         else if (this.state === -1) {
-
-            this.button.innerHTML = "Restart ?";
-            console.log("The End : Lost");
+            
+            ui.DrawEndMessage();
             this.state = -5;
         }
-        else {
-            return;//console.log("The End Won");
+        // launch event to move the player up
+        else if (this.state === 10) {
+            var event = new MyEvent(60, events.DoNothing, null, events.LaunchExemple, null);
+            this.eventList.push(event);
+            this.state = 0;
         }
-
     },
 
+    DrawPauseText: function () {
+        let ctx = canvasArea.context;
+        ctx.fillStyle = "white";
+        ctx.font = "32px Arial";
+        ctx.fillText("PAUSE", grid.centerX - 52, grid.centerY);
+    },
+    DrawAlphaRectangle: function () {
+        let ctx = canvasArea.context;
+        ctx.fillStyle = "rgba(0, 0, 0, 0.2)";
+        ctx.rect(0, 0, canvasArea.width, canvasArea.height);
+        ctx.fill();
+    },
     DrawPausedGame: function () {
-
+        this.DrawGrid();
+        this.DrawAlphaRectangle();
+        this.DrawPauseText();
     },
     UpdatePausedGame: function () {
-
+        this.DrawPausedGame();
     }
 };
 
-var grid = new Grid();
+// UI
+ui = {
+    Draw: function () {
+        this.DrawLevel();
+    },
+    DrawLevel: function () {
+        let ctx = canvasArea.context;
+        ctx.fillStyle = "black";
+        ctx.font = "32px Arial";
+        ctx.fillText("Lvl : " + gameManager.level, 10, 32);
+    },
+    DrawEndMessage: function (isVictory) {
 
-// ################################################################################################################
+        let str;
+        str = isVictory ? "You won !" : "You lost";
+        let ctx = canvasArea.context;
+        ctx.font = "64px Arial";
+        ctx.fillText(str, grid.centerX - 128, grid.centerY + 128);
+    }
+};
 
 // node
 function Node(minNode, maxNode) {
-    this.spd = 0.3;//0.3;
+    this.spd = 0.3;
     this.x = 0;
     this.y = 0;
     this.minNode = minNode;
     this.maxNode = maxNode;
     this.angle = 0;
     this.restDuration = 120;
-    this.restTimer = 20;
+    this.restTimer = 120;
     this.deathDuration = 120;
     this.deathTimer = this.deathDuration;
     this.radius = 16;
@@ -219,7 +282,7 @@ function Node(minNode, maxNode) {
 
         ctx.moveTo(this.x, this.y);
         ctx.fillStyle = "rgb(" + r + "," + g + "," + b + ")";
-        ctx.arc(this.x, this.y, this.radius, 0, Math.PI * 2 * (1 - scale));
+        ctx.arc(this.x, this.y, this.radius, -Math.PI / 2, -Math.PI / 2 + Math.PI * 2 * (1 - scale));
         ctx.fill();
     };
     this.DrawNormal = function () {
@@ -382,7 +445,6 @@ function DeathPoint() {
     this.x = 0;
     this.y = 0;
     this.spd = 0.01;
-    this.color = 0xaaaaaa;
     this.angle = 0;
 
     this.Place = function (newX, newY, newAngle) {
@@ -426,7 +488,6 @@ function MaxPoint() {
 function Edge(node1, node2, color) {
     this.firstNode = node1;
     this.secondNode = node2;
-    this.color = color;
 
     this.Update = function () {
     };
@@ -474,9 +535,7 @@ function Edge(node1, node2, color) {
         }
 
         var dist = player.GetDistBetweenPoints(coord[0], coord[1], player.x, player.y) + 0.001;
-
-        //console.log(angle - Math.PI / 2, player.x, player.x + Math.sign(coord[0] - player.x) * dist, player.y, player.y + -Math.sign(coord[1] - player.y) * dist);
-        //console.log(coord[0], coord[1], player.x, player.y);
+        
         player.x += Math.sign(coord[0] - player.x) * dist;
         player.y += Math.sign(coord[1] - player.y) * dist; 
     };
@@ -499,16 +558,304 @@ function Edge(node1, node2, color) {
     };
 }
 
+// grid
+var grid = {
+    // grid
+    centerX: canvasArea.width / 2,
+    centerY: canvasArea.height / 2,
+    // nodes
+    nodes: [],
+    radius: gameManager.levelProperties[0][1],
+    initialNodeNumber: 6,
+    nodesColorRGB: [0, 150, 0],
+    nodesDeathColor: "black", nodesDeathColorRGB: [0, 0, 0],
+    nodesSafeColor: "rgb(255, 230, 50)", // yellow en mieux
+    nodesBackgroundColor: "rgb(0, 210, 0)", // lightgreen en mieux
+    // edges and walls
+    deathPointsEdges: [],
+    walls: [],
+    //death points
+    deathPointsSpdBonus: 0,
+    deathPoints: [],
+    deathRadius: gameManager.levelProperties[0][0],
+    deathPointsBackgroundColor: "red",
+    // maxPoints
+    maxPoints: [],
+    maxRadius: gameManager.levelProperties[0][2],
+    maxPointsColor: "grey",
+    maxPointsColorBackground: "darkgrey",
+    // reduce 
+    reduceTimer: -1,
+    reduceDuration: 2 * 60,
+    reduceScale: 2,
+    reduceSpd: null,//this.maxRadius / this.reduceScale / this.reduceDuration,
+    // reposition
+    repositionTimer: -1,
+    repositionDuration: 60,
+    // test 
+    toDraw: [],
+
+    Initiate: function () {
+
+        // init var
+        this.reduceSpd = this.maxRadius / this.reduceScale / this.reduceDuration;
+
+        // initiate the nodes, death points, and max points
+        var angleBetweenEachNode = 2 * Math.PI / this.initialNodeNumber;
+
+        for (var i = 0; i < this.initialNodeNumber; i++) {
+
+            var angle = angleBetweenEachNode * i + Math.PI / 6;
+
+            var x = this.centerX + this.deathRadius * Math.cos(angle);
+            var y = this.centerY + this.deathRadius * -Math.sin(angle);
+
+            var deathPoint = new DeathPoint(this.deathPointsColor);
+            deathPoint.Place(x, y, angle);
+            this.deathPoints.push(deathPoint);
+
+            x = this.centerX + this.maxRadius * Math.cos(angle);
+            y = this.centerY + this.maxRadius * -Math.sin(angle);
+
+            var maxPoint = new MaxPoint();
+            maxPoint.Place(x, y, angle);
+            this.maxPoints.push(maxPoint);
+
+            //x = this.centerX + this.radius * Math.cos(angle);
+            //y = this.centerY + this.radius * -Math.sin(angle);
+
+            var node = new Node(deathPoint, maxPoint);
+            if (/*false && /**/i !== 1) {
+                node.isSafe = true;
+                node.Place(x, y, angle);
+            }
+            else
+                node.Place(this.centerX + this.radius * Math.cos(angle), this.centerY + this.radius * -Math.sin(angle), angle);
+            this.nodes.push(node);
+        }
+
+        // initiate the walls
+        for (i = 0; i < this.initialNodeNumber - 1; i++) {
+            this.walls.push(new Edge(this.nodes[i], this.nodes[i + 1], ));
+        }
+        this.walls.push(new Edge(this.nodes[this.initialNodeNumber - 1], this.nodes[0]));
+
+        // initiate the edges
+        for (i = 0; i < this.initialNodeNumber - 1; i++) {
+            this.deathPointsEdges.push(new Edge(this.deathPoints[i], this.deathPoints[i + 1], ));
+        }
+        this.deathPointsEdges.push(new Edge(this.deathPoints[this.initialNodeNumber - 1], this.deathPoints[0]));
+
+
+    },
+
+    GetVictoryStatus: function () {
+        let score = 0;
+        for (let i = 0; i < this.nodes.length; i++) {
+            var status = this.nodes[i].GetLiveStatus();
+            if (status === -1)
+                return -1;
+            score += status;
+        }
+
+        if (score === 6)
+            return 1;
+        return 0;
+    },
+
+    DrawMaxPointsBackground: function () {
+        var ctx = canvasArea.context;
+        ctx.fillStyle = this.maxPointsColorBackground;
+
+        for (var i = 0; i < this.maxPoints.length; i++) {
+            ctx.beginPath();
+            ctx.moveTo(grid.centerX, grid.centerY);
+            ctx.lineTo(this.maxPoints[i].x, this.maxPoints[i].y);
+            ctx.lineTo(this.maxPoints[(i + 1) % this.maxPoints.length].x,
+                this.maxPoints[(i + 1) % this.maxPoints.length].y);
+            ctx.fill();
+        }
+    },
+    DrawDeathPointsBackground: function () {
+        var ctx = canvasArea.context;
+        ctx.fillStyle = grid.deathPointsBackgroundColor;
+
+        for (var i = 0; i < this.deathPoints.length; i++) {
+            ctx.beginPath();
+            ctx.moveTo(grid.centerX, grid.centerY);
+            ctx.lineTo(this.deathPoints[i].x, this.deathPoints[i].y);
+            ctx.lineTo(this.deathPoints[(i + 1) % this.deathPoints.length].x,
+                this.deathPoints[(i + 1) % this.deathPoints.length].y);
+            ctx.fill();
+        }
+    },
+    DrawNodesBackground: function () {
+        var ctx = canvasArea.context;
+        ctx.fillStyle = this.nodesBackgroundColor;
+
+        for (var i = 0; i < this.walls.length; i++) {
+            var wall = this.walls[i];
+
+            ctx.beginPath();
+            ctx.moveTo(grid.centerX, grid.centerY);
+            ctx.lineTo(wall.firstNode.x, wall.firstNode.y);
+            ctx.lineTo(wall.secondNode.x, wall.secondNode.y);
+            ctx.fill();
+        }
+    },
+    Draw: function () {
+
+        this.DrawMaxPointsBackground();
+
+        this.DrawNodesBackground();
+
+        this.DrawDeathPointsBackground();
+
+        for (var i = 0; i < this.walls.length; i++)
+            this.walls[i].Draw();
+
+        for (i = 0; i < this.deathPointsEdges.length; i++)
+            this.deathPointsEdges[i].Draw();
+
+        for (i = 0; i < this.maxPoints.length; i++)
+            this.maxPoints[i].Draw();
+
+        for (i = 0; i < this.nodes.length; i++)
+            this.nodes[i].Draw();
+
+        player.Draw();
+
+        var test = new Test();
+        test.DrawPoints(this.toDraw);
+    },
+    Clear: function () {
+        canvasArea.canvas.getContext("2d").clearRect(0, 0, canvasArea.width, canvasArea.height);
+    },
+
+    Reduce: function () {
+        for (let i = 0; i < this.nodes.length; i++) {
+            let node = this.nodes[i];
+
+            // reduce node
+            var scale = player.GetDistBetweenPoints(grid.centerX, grid.centerY, node.x, node.y)
+                / player.GetDistBetweenPoints(grid.centerX, grid.centerY, node.maxNode.x, node.maxNode.y);
+
+            node.x += grid.reduceSpd * Math.cos(node.angle + Math.PI) * scale;
+            node.y -= grid.reduceSpd * Math.sin(node.angle + Math.PI) * scale;
+
+            // reduce deathPoint
+            scale = player.GetDistBetweenPoints(grid.centerX, grid.centerY, node.minNode.x, node.minNode.y)
+                / player.GetDistBetweenPoints(grid.centerX, grid.centerY, node.maxNode.x, node.maxNode.y);
+
+            node.minNode.x += grid.reduceSpd * Math.cos(node.angle + Math.PI) * scale;
+            node.minNode.y -= grid.reduceSpd * Math.sin(node.angle + Math.PI) * scale;
+
+            // reduce maxPoint
+            node.maxNode.x += grid.reduceSpd * Math.cos(node.angle + Math.PI);
+            node.maxNode.y -= grid.reduceSpd * Math.sin(node.angle + Math.PI);
+        }
+
+        // reduce player
+        let coord = [];
+        let minVal = Infinity;
+        for (let i = 0; i < grid.walls.length; i++) {
+            let wall = grid.walls[i];
+            let curCoord = player.GetIntersectionPointBetweenLines(player.x, player.y, grid.centerX, grid.centerY,
+                wall.firstNode.x, wall.firstNode.y, wall.secondNode.x, wall.secondNode.y);
+
+            if (curCoord === [])
+                continue;
+
+            var dist = player.GetDistBetweenPoints(curCoord[0], curCoord[1], player.x, player.y);
+            if (dist < minVal) {
+                minVal = dist;
+                coord = curCoord;
+            }
+        }
+
+        scale = player.GetDistBetweenPoints(grid.centerX, grid.centerY, player.x, player.y)
+            / player.GetDistBetweenPoints(grid.centerX, grid.centerY, coord[0], coord[1]);
+
+        var hyp = minVal;
+        var adj = coord[0] - player.x;
+        var angle = Math.acos(adj / hyp) * Math.sign(player.y - coord[1]);
+
+        player.x += grid.reduceSpd * Math.cos(angle + Math.PI) * scale;
+        player.y -= grid.reduceSpd * Math.sin(angle + Math.PI) * scale;
+    },
+    RepositionPlayer: function () {
+        player.x -= (player.x - this.centerX) / this.repositionTimer;
+        player.y -= (player.y - this.centerY) / this.repositionTimer;
+    },
+    RepositionNodes: function (newRadius) {
+
+        for (let i = 0; i < this.nodes.length; i++) {
+            let node = this.nodes[i];
+
+            var dist = player.GetDistBetweenPoints(this.centerX, this.centerY, node.x, node.y);
+            var spd = (newRadius - dist) / this.repositionTimer;
+
+            node.x += Math.cos(node.angle) * spd;
+            node.y -= Math.sin(node.angle) * spd;
+        }
+    },
+    RepositionMaxPoints: function (newRadius) {
+        for (let i = 0; i < this.maxPoints.length; i++) {
+            let maxPoint = this.maxPoints[i];
+
+            var dist = player.GetDistBetweenPoints(this.centerX, this.centerY, maxPoint.x, maxPoint.y);
+            var spd = (newRadius - dist) / this.repositionTimer;
+
+            maxPoint.x += Math.cos(maxPoint.angle) * spd;
+            maxPoint.y -= Math.sin(maxPoint.angle) * spd;
+        }
+    },
+    RepositionMinPoints: function (newRadius) {
+
+        for (let i = 0; i < this.deathPoints.length; i++) {
+            let minPoint = this.deathPoints[i];
+
+            var dist = player.GetDistBetweenPoints(this.centerX, this.centerY, minPoint.x, minPoint.y);
+            var spd = (newRadius - dist) / this.repositionTimer;
+
+            minPoint.x += Math.cos(minPoint.angle) * spd;
+            minPoint.y -= Math.sin(minPoint.angle) * spd;
+        }
+    },
+
+    Update: function (delta) {
+        canvasArea.Update();
+        this.toDraw = [];
+
+        for (let i = 0; i < this.deathPoints.length; i++)
+            this.deathPoints[i].Expend();
+
+        for (let i = 0; i < this.nodes.length; i++)
+            this.nodes[i].FirstUpdate();
+
+        // check for triangle collision and react accordingly
+        for (let i = 0; i < this.walls.length; i++) {
+            if (this.walls[i].CheckForPlayerCollision())
+                continue;
+        }
+
+        player.Update(delta);
+
+        for (let i = 0; i < this.nodes.length; i++)
+            this.nodes[i].SecondUpdate();
+    }
+};
+
 // player's cursor
 var player = {
     spd: 3,
     x: grid.centerX,
     y: grid.centerY,
     inputs: [false, false, false, false],
-    currentGraphics: null,
-    color: 0x000000,
+    color: "black",
     radius: 16,
     angle: 0,
+    canMove: false,
 
     Initiate: function () {
         window.addEventListener("keydown",
@@ -531,9 +878,10 @@ var player = {
     },
 
     Update: function (delta) {
-        player.KeysMotion();
+        if (this.canMove)
+            player.KeysMotion();
     },
-
+    
     Move: function (dx, dy) {
 
         // check if is going through a wall
@@ -574,7 +922,7 @@ var player = {
         else if (dx === 0)
             angle = -dy * Math.PI / 2;
         else {
-            angle = -dy * (Math.PI / 2 - dx * Math.PI / 4); 
+            angle = -dy * (Math.PI / 2 - dx * Math.PI / 4);
         }
 
         dx = Math.cos(angle) * this.spd;
@@ -582,7 +930,7 @@ var player = {
 
         dx = Math.abs(dx) < 0.001 ? 0 : dx;
         dy = Math.abs(dy) < 0.001 ? 0 : dy;
-        
+
         player.Move(dx, dy);
     },
 
@@ -634,7 +982,7 @@ var player = {
         ctx = canvasArea.context;
 
         ctx.beginPath();
-        ctx.fillStyle = "black";
+        ctx.fillStyle = this.color;
         ctx.arc(this.x, this.y, this.radius, 0, Math.PI * 2);
         ctx.fill();
 
@@ -704,312 +1052,6 @@ var player = {
     }
 };
 
-// grid
-function Grid() {
-    // grid
-    this.centerX = canvasArea.width / 2;
-    this.centerY = canvasArea.height / 2;
-    // nodes
-    this.nodes = [];
-    this.radius = gameManager.levelProperties[0][1];
-    this.initialNodeNumber = 6;
-    this.nodesColorRGB = [0, 150, 0];
-    this.nodesDeathColor = "black"; this.nodesDeathColorRGB = [0, 0, 0];
-    this.nodesSafeColor = "rgb(" + (255).toString() + "," + (230).toString() + "," + (50).toString() + ")"; // yellow en mieux
-    this.nodesBackgroundColor = "rgb(" + (0).toString() + "," + (210).toString() + "," + (0).toString() + ")"; // lightgreen en mieux
-    // edges and walls
-    this.deathPointsEdges = []; 
-    this.walls = [];
-    //death points
-    this.deathPointsSpdBonus = 0;
-    this.deathPoints = [];
-    this.deathRadius = gameManager.levelProperties[0][0];
-    this.deathPointsBackgroundColor = "red";
-    // maxPoints
-    this.maxPoints = [];
-    this.maxRadius = gameManager.levelProperties[0][2];
-    this.maxPointsColor = "grey";
-    this.maxPointsColorBackground = "darkgrey";
-    // reduce 
-    this.reduceTimer = -1;
-    this.reduceDuration = 2 * 60;
-    this.reduceScale = 2;
-    this.reduceSpd = this.maxRadius / this.reduceScale / this.reduceDuration;
-    // reposition
-    this.repositionTimer = -1;
-    this.repositionDuration = 60;
-    // test 
-    this.toDraw = [];
-    
-    this.Initiate = function () {
-
-        // initiate the nodes, death points, and max points
-        var angleBetweenEachNode = 2 * Math.PI / this.initialNodeNumber;
-
-        for (var i = 0; i < this.initialNodeNumber; i++) {
-
-            var angle = angleBetweenEachNode * i + Math.PI / 6;
-
-            var x = this.centerX + this.deathRadius * Math.cos(angle);
-            var y = this.centerY + this.deathRadius * -Math.sin(angle);
-
-            var deathPoint = new DeathPoint(this.deathPointsColor);
-            deathPoint.Place(x, y, angle);
-            this.deathPoints.push(deathPoint);
-
-            x = this.centerX + this.maxRadius * Math.cos(angle);
-            y = this.centerY + this.maxRadius * -Math.sin(angle);
-
-            var maxPoint = new MaxPoint();
-            maxPoint.Place(x, y, angle);
-            this.maxPoints.push(maxPoint);
-
-            x = this.centerX + this.radius * Math.cos(angle);
-            y = this.centerY + this.radius * -Math.sin(angle);
-
-            var node = new Node(deathPoint, maxPoint);
-            node.Place(x, y, angle);
-            this.nodes.push(node);
-        }
-
-        // initiate the walls
-        for (i = 0; i < this.initialNodeNumber - 1; i++) {
-            this.walls.push(new Edge(this.nodes[i], this.nodes[i + 1], ));
-        }
-        this.walls.push(new Edge(this.nodes[this.initialNodeNumber - 1], this.nodes[0]));
-
-        // initiate the edges
-        for (i = 0; i < this.initialNodeNumber - 1; i++) {
-            this.deathPointsEdges.push(new Edge(this.deathPoints[i], this.deathPoints[i + 1], ));
-        }
-        this.deathPointsEdges.push(new Edge(this.deathPoints[this.initialNodeNumber - 1], this.deathPoints[0]));
-
-
-    };
-
-    this.GetVictoryStatus = function () {
-        let score = 0;
-        for (let i = 0; i < this.nodes.length; i++) {
-            var status = this.nodes[i].GetLiveStatus();
-            if (status === -1)
-                return -1;
-            score += status;
-        }
-
-        if (score === 6)
-            return 1;
-        return 0;
-    };
-
-    this.DrawMaxPointsBackground = function () {
-        var ctx = canvasArea.context;
-        ctx.fillStyle = this.maxPointsColorBackground;
-
-        for (var i = 0; i < this.maxPoints.length; i++) {
-            ctx.beginPath();
-            ctx.moveTo(grid.centerX, grid.centerY);
-            ctx.lineTo(this.maxPoints[i].x, this.maxPoints[i].y);
-            ctx.lineTo(this.maxPoints[(i + 1) % this.maxPoints.length].x,
-                this.maxPoints[(i + 1) % this.maxPoints.length].y);
-            ctx.fill();
-        }
-    };
-    this.DrawDeathPointsBackground = function () {
-        var ctx = canvasArea.context;
-        ctx.fillStyle = grid.deathPointsBackgroundColor;
-        
-        for (var i = 0; i < this.deathPoints.length; i++) {
-            ctx.beginPath();
-            ctx.moveTo(grid.centerX, grid.centerY);
-            ctx.lineTo(this.deathPoints[i].x, this.deathPoints[i].y);
-            ctx.lineTo(this.deathPoints[(i + 1) % this.deathPoints.length].x,
-                       this.deathPoints[(i + 1) % this.deathPoints.length].y);
-            ctx.fill();
-        }
-    };
-    this.DrawNodesBackground = function () {
-        var ctx = canvasArea.context;
-        ctx.fillStyle = this.nodesBackgroundColor;
-
-        for (var i = 0; i < this.walls.length; i++) {
-            var wall = this.walls[i];
-            
-            ctx.beginPath();
-            ctx.moveTo(grid.centerX, grid.centerY);
-            ctx.lineTo(wall.firstNode.x, wall.firstNode.y);
-            ctx.lineTo(wall.secondNode.x, wall.secondNode.y);
-            ctx.fill();
-        }
-    };
-    this.Draw = function () {
-
-        this.DrawMaxPointsBackground();
-
-        this.DrawNodesBackground();
-
-        this.DrawDeathPointsBackground();
-
-        for (var i = 0; i < this.walls.length; i++) 
-            this.walls[i].Draw();
-
-        for (i = 0; i < this.deathPointsEdges.length; i++) 
-            this.deathPointsEdges[i].Draw();
-
-        for (i = 0; i < this.maxPoints.length; i++) 
-            this.maxPoints[i].Draw();
-
-        for (i = 0; i < this.nodes.length; i++) 
-            this.nodes[i].Draw();
-
-        player.Draw();
-
-        var test = new Test();
-        test.DrawPoints(this.toDraw);
-    };
-    this.Clear = function () {
-        canvasArea.canvas.getContext("2d").clearRect(0, 0, canvasArea.width, canvasArea.height);
-    };
-
-    this.Reduce = function () {
-        for (let i = 0; i < this.nodes.length; i++) {
-            let node = this.nodes[i];
-
-            // reduce node
-            var scale = player.GetDistBetweenPoints(grid.centerX, grid.centerY, node.x, node.y)
-                / player.GetDistBetweenPoints(grid.centerX, grid.centerY, node.maxNode.x, node.maxNode.y);
-
-            node.x += grid.reduceSpd * Math.cos(node.angle + Math.PI) * scale;
-            node.y -= grid.reduceSpd * Math.sin(node.angle + Math.PI) * scale;
-
-            // reduce deathPoint
-            scale = player.GetDistBetweenPoints(grid.centerX, grid.centerY, node.minNode.x, node.minNode.y)
-                / player.GetDistBetweenPoints(grid.centerX, grid.centerY, node.maxNode.x, node.maxNode.y);
-
-            node.minNode.x += grid.reduceSpd * Math.cos(node.angle + Math.PI) * scale;
-            node.minNode.y -= grid.reduceSpd * Math.sin(node.angle + Math.PI) * scale;
-
-            // reduce maxPoint
-            node.maxNode.x += grid.reduceSpd * Math.cos(node.angle + Math.PI);
-            node.maxNode.y -= grid.reduceSpd * Math.sin(node.angle + Math.PI);
-        }
-
-        // reduce player
-        let coord = [];
-        let minVal = Infinity;
-        for (let i = 0; i < grid.walls.length; i++) {
-            let wall = grid.walls[i];
-            let curCoord = player.GetIntersectionPointBetweenLines(player.x, player.y, grid.centerX, grid.centerY,
-                wall.firstNode.x, wall.firstNode.y, wall.secondNode.x, wall.secondNode.y);
-
-            if (curCoord === [])
-                continue;
-
-            var dist = player.GetDistBetweenPoints(curCoord[0], curCoord[1], player.x, player.y);
-            if (dist < minVal) {
-                minVal = dist;
-                coord = curCoord;
-            }
-        }
-        
-        scale = player.GetDistBetweenPoints(grid.centerX, grid.centerY, player.x, player.y)
-            / player.GetDistBetweenPoints(grid.centerX, grid.centerY, coord[0], coord[1]);
-
-        var hyp = minVal;
-        var adj = coord[0] - player.x;
-        var angle = Math.acos(adj / hyp) * Math.sign(player.y - coord[1]);
-        
-        player.x += grid.reduceSpd * Math.cos(angle + Math.PI) * scale;
-        player.y -= grid.reduceSpd * Math.sin(angle + Math.PI) * scale;
-    };
-    this.RepositionPlayer = function () {
-        player.x -= (player.x - this.centerX) / this.repositionTimer;
-        player.y -= (player.y - this.centerY) / this.repositionTimer;
-    };
-    this.RepositionNodes = function (newRadius) {
-
-        for (let i = 0; i < this.nodes.length; i++) {
-            let node = this.nodes[i];
-            
-            var dist = player.GetDistBetweenPoints(this.centerX, this.centerY, node.x, node.y);
-            var spd = (newRadius - dist)  / this.repositionTimer;
-
-            node.x += Math.cos(node.angle) * spd;
-            node.y -= Math.sin(node.angle) * spd;
-        }
-    };
-    this.RepositionMaxPoints = function (newRadius) {
-        for (let i = 0; i < this.maxPoints.length; i++) {
-            let maxPoint = this.maxPoints[i];
-
-            var dist = player.GetDistBetweenPoints(this.centerX, this.centerY, maxPoint.x, maxPoint.y);
-            var spd = (newRadius - dist) / this.repositionTimer;
-
-            maxPoint.x += Math.cos(maxPoint.angle) * spd;
-            maxPoint.y -= Math.sin(maxPoint.angle) * spd;
-        }
-    };
-    this.RepositionMinPoints = function (newRadius) {
-
-        for (let i = 0; i < this.deathPoints.length; i++) {
-            let minPoint = this.deathPoints[i];
-
-            var dist = player.GetDistBetweenPoints(this.centerX, this.centerY, minPoint.x, minPoint.y);
-            var spd = (newRadius - dist) / this.repositionTimer;
-
-            minPoint.x += Math.cos(minPoint.angle) * spd;
-            minPoint.y -= Math.sin(minPoint.angle) * spd;
-        }
-    };
-
-    this.Update = function (delta) {
-        canvasArea.Update();
-        this.toDraw = [];
-
-        for (let i = 0; i < this.deathPoints.length; i++)
-            this.deathPoints[i].Expend();
-
-        for (let i = 0; i < this.nodes.length; i++)
-            this.nodes[i].FirstUpdate();
-
-        // check for triangle collision and react accordingly
-        for (let i = 0; i < this.walls.length; i++) {
-            if (this.walls[i].CheckForPlayerCollision())
-                continue;//console.log("collision");
-        }
-
-        player.Update(delta);
-
-        for (let i = 0; i < this.nodes.length; i++)
-            this.nodes[i].SecondUpdate();
-    };
-}
-
-// events
-function Event(duration, action, begin,  target) {
-    this.timer = duration;
-    this.Action = action;
-    this.Begin = begin;
-    this.target = target;
-
-    this.Initiate = function () {
-        setInterval(this.Update, canvasArea.interval);
-        
-    };
-    this.Update = function () {
-        if (this.timer > 0) {
-            this.timer--;
-            this.action(target);
-        }
-        else 
-            this.End();
-    };
-    this.Begin = function () {
-    };
-    this.End = function () {
-        clearInterval(this.Update);
-    };
-}
-
 // test
 function Test() {
     this.DrawPoints = function (L) {
@@ -1026,11 +1068,57 @@ function Test() {
     };
 }
 
+// events 
+function MyEvent(duration, action, target, endAction, endTarget) {
+    this.action = action;
+    this.target = target;
+    this.endAction = endAction;
+    this.endTarget = endTarget;
+
+    this.timer = duration;
+    this.duration = duration;
+
+    this.Update = function () {
+        if (this.timer > 0) {
+            this.timer--;
+            this.action(this.target);
+        }
+        else {
+            gameManager.eventList.pop();
+            if (this.endAction !== 'undefined')
+                this.endAction(this.endTarget);
+        }
+    };
+}
+
+events = {
+    MovePlayerUp: function (p) {
+        p.y -= p.spd;
+    },
+    EnablePlayerMovements: function (p) {
+        p.canMove = true;
+    },
+    GoToState: function (newState) {
+        gameManager.state = newState;
+    },
+    LaunchExemple: function (arg) {
+        let event = new MyEvent(80, events.MovePlayerUp, player, events.EnablePlayerMovements, player);
+        gameManager.eventList.push(event);
+    },
+    DoNothing: function (arg) {
+
+    }
+};
+
 function Update() {
-    if (!gameManager.pauseInput)
+    if (!gameManager.pauseInput) {
         gameManager.UpdateGame();
+        gameManager.UpdateEvents();
+    }
     else
         gameManager.UpdatePausedGame();
+
+    ui.Draw(); 
 }
 
 canvasArea.Initiate();
