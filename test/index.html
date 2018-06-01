@@ -14,8 +14,12 @@
     <script src="js/lib/howler.js"></script>
 
     <div id="allo" style="margin-left:320px;">
-        <button type="button" onmousedown="gameManager.UpdateButtonPress();" style="visibility:visible; width: 96px" id="button">
+        <button type="button" onmousedown="gameManager.OnButtonPressReset();" style="visibility:visible; width: 96px" id="resetButton">
             Reset ?
+        </button>
+
+        <button type="button" onmousedown="gameManager.OnButtonPressTryAgain();" style="visibility:visible; width: 96px" id="tryAgainButton">
+            Try again ?
         </button>
     </div>
 
